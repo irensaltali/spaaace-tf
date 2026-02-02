@@ -48,6 +48,7 @@ resource "aws_s3_bucket_website_configuration" "this" {
 }
 
 # S3 Bucket Policy - Allow CloudFront OAC access
+# Uses the CloudFront service principal - access is controlled by OAC
 resource "aws_s3_bucket_policy" "this" {
   bucket = aws_s3_bucket.this.id
   policy = jsonencode({
@@ -61,11 +62,6 @@ resource "aws_s3_bucket_policy" "this" {
         }
         Action   = "s3:GetObject"
         Resource = "${aws_s3_bucket.this.arn}/*"
-        Condition = {
-          StringEquals = {
-            "AWS:SourceArn" = aws_cloudfront_distribution.this.arn
-          }
-        }
       }
     ]
   })
@@ -157,8 +153,6 @@ resource "aws_cloudfront_distribution" "this" {
   web_acl_id = var.web_acl_id
 
   tags = local.common_tags
-
-  depends_on = [aws_s3_bucket_policy.this]
 }
 
 # Route53 Records (if zone_id provided)
