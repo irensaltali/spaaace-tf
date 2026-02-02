@@ -1,0 +1,117 @@
+name: Deploy Game
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      deploy_game:
+        description: 'Deploy game server'
+        required: true
+        default: true
+        type: boolean
+      deploy_website:
+        description: 'Deploy website'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  deploy-game:
+    name: Deploy Game Server
+    runs-on: ubuntu-latest
+    if: ${{ inputs.deploy_game }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get Terraform Outputs
+        id: terraform
+        working-directory: ./spaaace-tf/envs/${{ inputs.environment }}
+        run: |
+          echo "ecr_repo=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+          echo "cluster_name=$(terraform output -raw ecs_cluster_name)" >> $GITHUB_OUTPUT
+          echo "service_name=$(terraform output -raw ecs_service_name)" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR
+        working-directory: ./spaaace
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: spaaace-${{ inputs.environment }}-game
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Update ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ steps.terraform.outputs.cluster_name }} \
+            --service ${{ steps.terraform.outputs.service_name }} \
+            --force-new-deployment
+
+      - name: Wait for deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ steps.terraform.outputs.cluster_name }} \
+            --services ${{ steps.terraform.outputs.service_name }}
+
+  deploy-website:
+    name: Deploy Website
+    runs-on: ubuntu-latest
+    if: ${{ inputs.deploy_website }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Terraform Outputs
+        id: terraform
+        working-directory: ./spaaace-tf/envs/${{ inputs.environment }}
+        run: |
+          echo "bucket_name=$(terraform output -raw website_bucket_name)" >> $GITHUB_OUTPUT
+          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> $GITHUB_OUTPUT
+
+      - name: Deploy to S3
+        working-directory: ./spaaace
+        run: |
+          aws s3 sync dist/ s3://${{ steps.terraform.outputs.bucket_name }}/ --delete
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
+            --paths "/*"
