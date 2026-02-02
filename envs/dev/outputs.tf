@@ -128,7 +128,7 @@ output "deploy_commands" {
     cd ../spaaace
     docker build -t spaaace-game .
     docker tag spaaace-game:latest ${module.ecr.repository_url}:latest
-    aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin ${module.ecr.repository_url}
+    aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin ${module.ecr.repository_url}
     docker push ${module.ecr.repository_url}:latest
     
     # Update ECS service:

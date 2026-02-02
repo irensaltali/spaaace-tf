@@ -11,7 +11,13 @@ variable "environment" {
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "eu-west-1"
+  default     = "eu-north-1"
+}
+
+variable "aws_profile" {
+  description = "AWS profile to use for authentication"
+  type        = string
+  default     = "irensaltali"
 }
 
 variable "domain_name" {
@@ -33,7 +39,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "Availability zones to use"
   type        = list(string)
-  default     = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+  default     = ["eu-north-1a", "eu-north-1b", "eu-north-1c"]
 }
 
 variable "public_subnets" {

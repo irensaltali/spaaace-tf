@@ -24,7 +24,7 @@ on:
         type: boolean
 
 env:
-  AWS_REGION: eu-west-1
+  AWS_REGION: eu-north-1
 
 jobs:
   deploy-game:

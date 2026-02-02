@@ -33,7 +33,8 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region  = var.aws_region
+  profile = var.aws_profile
 
   default_tags {
     tags = {
@@ -97,20 +98,20 @@ module "ecr" {
 module "alb" {
   source = "../../modules/alb"
 
-  name     = "${local.prefix}-alb"
-  vpc_id   = module.vpc.vpc_id
+  name              = "${local.prefix}-alb"
+  vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
 
   enable_http  = true
-  enable_https = false  # Start with HTTP for dev, enable HTTPS with certificate later
+  enable_https = false # Start with HTTP for dev, enable HTTPS with certificate later
 
-  target_port   = 3000
-  idle_timeout  = 120  # Important for WebSockets - long-lived connections
-  health_check_path = "/health"  # Dedicated health endpoint for game server
-  deregistration_delay = 30  # Quick deregistration for faster failover
+  target_port          = 3000
+  idle_timeout         = 120       # Important for WebSockets - long-lived connections
+  health_check_path    = "/health" # Dedicated health endpoint for game server
+  deregistration_delay = 30        # Quick deregistration for faster failover
 
-  enable_stickiness    = true  # CRITICAL: WebSocket connections must stick to same instance
-  stickiness_duration  = 86400 # 24 hours
+  enable_stickiness   = true  # CRITICAL: WebSocket connections must stick to same instance
+  stickiness_duration = 86400 # 24 hours
 
   enable_deletion_protection = false
 
@@ -123,9 +124,9 @@ module "alb" {
 module "ecs_cluster" {
   source = "../../modules/ecs-cluster"
 
-  name     = local.prefix
-  vpc_id   = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnet_ids
+  name                  = local.prefix
+  vpc_id                = module.vpc.vpc_id
+  private_subnet_ids    = module.vpc.private_subnet_ids
   alb_security_group_id = module.alb.security_group_id
 
   instance_type    = var.ecs_instance_type
@@ -152,7 +153,7 @@ module "redis" {
   source = "../../modules/elasticache"
 
   name = local.prefix
-  
+
   vpc_id                = module.vpc.vpc_id
   private_subnet_ids    = module.vpc.private_subnet_ids
   ecs_security_group_id = module.ecs_cluster.instance_security_group_id
@@ -160,17 +161,17 @@ module "redis" {
   # Multi-AZ configuration for HA
   multi_az_enabled           = true
   automatic_failover_enabled = true
-  num_cache_clusters         = 2  # Primary + Replica across different AZs
+  num_cache_clusters         = 2 # Primary + Replica across different AZs
 
   # Node configuration (cache.t4g.micro is free tier eligible)
   node_type = "cache.t4g.micro"
 
   # Persistence for game state durability
-  at_rest_encryption_enabled = false  # Set to true for production
-  transit_encryption_enabled = false  # Set to true for production with auth_token
+  at_rest_encryption_enabled = false # Set to true for production
+  transit_encryption_enabled = false # Set to true for production with auth_token
 
   # Backup configuration
-  snapshot_retention_limit = 3  # Keep 3 days of backups for dev
+  snapshot_retention_limit = 3 # Keep 3 days of backups for dev
   snapshot_window          = "03:00-04:00"
 
   # Alarms disabled for dev
@@ -185,16 +186,16 @@ module "redis" {
 module "ecs_service" {
   source = "../../modules/ecs-service"
 
-  name     = "${local.prefix}-game"
-  cluster_id   = module.ecs_cluster.cluster_id
-  cluster_name = module.ecs_cluster.cluster_name
+  name                   = "${local.prefix}-game"
+  cluster_id             = module.ecs_cluster.cluster_id
+  cluster_name           = module.ecs_cluster.cluster_name
   capacity_provider_name = module.ecs_cluster.capacity_provider_name
 
   container_image = "${module.ecr.repository_url}:latest"
   container_port  = 3000
 
-  cpu    = 256   # 0.25 vCPU
-  memory = 512   # 512 MB
+  cpu    = 256 # 0.25 vCPU
+  memory = 512 # 512 MB
 
   desired_count = var.game_desired_count
 
@@ -203,11 +204,11 @@ module "ecs_service" {
   # Environment variables for game server
   # REDIS_URL allows the game server to persist/restore game state
   environment_variables = {
-    PORT        = "3000"
-    NODE_ENV    = "production"
-    REDIS_URL   = module.redis.connection_string
-    REDIS_ENABLED = "true"
-    GAME_HYDRATION_ENABLED = "true"  # Enable state hydration on startup
+    PORT                   = "3000"
+    NODE_ENV               = "production"
+    REDIS_URL              = module.redis.connection_string
+    REDIS_ENABLED          = "true"
+    GAME_HYDRATION_ENABLED = "true" # Enable state hydration on startup
   }
 
   aws_region = data.aws_region.current.name
@@ -245,10 +246,10 @@ module "website" {
   bucket_name = "${local.prefix}-website-${data.aws_caller_identity.current.account_id}"
 
   index_document = "index.html"
-  error_document = "index.html"  # SPA pattern - serve index.html for all routes
+  error_document = "index.html" # SPA pattern - serve index.html for all routes
 
   cloudfront_comment = "${local.prefix} website"
-  price_class        = "PriceClass_100"  # North America and Europe only (cost-saving)
+  price_class        = "PriceClass_100" # North America and Europe only (cost-saving)
 
   # Custom domain (when ready)
   # aliases = ["www.${var.domain_name}"]

@@ -141,7 +141,7 @@ cd spaaace
 docker build -t spaaace-game:latest .
 
 # Login to ECR
-aws ecr get-login-password --region eu-west-1 | \
+aws ecr get-login-password --region eu-north-1 | \
   docker login --username AWS --password-stdin <ecr-repo-url>
 
 # Push image

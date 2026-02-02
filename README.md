@@ -77,7 +77,7 @@ terraform apply
 
 ```bash
 # Get the ECR login token
-aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
+aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
 
 # Build and push the image
 cd ../../spaaace
@@ -215,7 +215,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed implementation guide.
 ## Environments
 
 ### Dev Environment
-- **3 AZs** for HA testing (`eu-west-1a`, `eu-west-1b`, `eu-west-1c`)
+- **3 AZs** for HA testing (`eu-north-1a`, `eu-north-1b`, `eu-north-1c`)
 - Cost-optimized (t3.small, single NAT gateway)
 - HTTP only (no SSL certificate)
 - Auto-scaling disabled
