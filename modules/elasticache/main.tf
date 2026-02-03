@@ -57,17 +57,9 @@ resource "aws_elasticache_parameter_group" "this" {
   family = "redis7"
   name   = "${var.name}-redis-params"
 
-  # Enable AOF persistence for data durability
-  parameter {
-    name  = "appendonly"
-    value = "yes"
-  }
-
-  # fsync every second (balance between performance and durability)
-  parameter {
-    name  = "appendfsync"
-    value = "everysec"
-  }
+  # Note: AWS ElastiCache manages AOF settings internally for Redis 7
+  # The default configuration already provides good durability.
+  # appendonly and appendfsync cannot be modified directly.
 
   # Enable keyspace notifications for game events (optional)
   parameter {

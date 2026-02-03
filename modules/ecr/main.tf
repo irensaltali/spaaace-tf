@@ -1,5 +1,13 @@
 # ECR Module - Container Registry for game server images
 
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+    }
+  }
+}
+
 locals {
   common_tags = merge(var.tags, {
     Module = "ecr"

@@ -58,7 +58,7 @@ spaaace-tf/
 ### 🔧 Modules Overview
 
 #### 1. VPC Module
-- **2 Availability Zones** for high availability
+- **3 Availability Zones** for high availability
 - **Public subnets** for ALB (load balancer)
 - **Private subnets** for ECS instances (security best practice)
 - **NAT Gateway** for outbound internet from private subnets
@@ -141,7 +141,7 @@ cd spaaace
 docker build -t spaaace-game:latest .
 
 # Login to ECR
-aws ecr get-login-password --region eu-north-1 | \
+aws ecr get-login-password --region eu-west-1 | \
   docker login --username AWS --password-stdin <ecr-repo-url>
 
 # Push image
@@ -257,7 +257,7 @@ aws cloudfront create-invalidation \
 
 ### ✅ Step 1 Deliverables
 
-- [x] VPC with 2 AZs, public/private subnets
+- [x] VPC with 3 AZs, public/private subnets
 - [x] ECS cluster with EC2 nodes and capacity provider
 - [x] WebSocket-ready ALB with health checks
 - [x] ECS service with auto-scaling capability

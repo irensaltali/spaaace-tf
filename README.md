@@ -46,13 +46,46 @@ This infrastructure implements a **High Availability Architecture** that ensures
 3. **ALB with Stickiness** - WebSocket-ready load balancer with session affinity
 4. **Capacity Provider** - Seamless scaling and instance management
 
+## CI/CD Architecture
+
+This repository works together with the [`spaaace`](https://github.com/irensaltali/spaaace) repository for continuous deployment across **staging** and **production** environments:
+
+```
+spaaace repo                      spaaace-tf repo (this repo)
+     │                                   │
+     │  Push to develop                  │
+     │ ────────────────────────────────> │  1. Build Docker image
+     │                                   │  2. Push to ECR (eu-west-1)
+     │  Push to master/main              │  3. Trigger staging deployment
+     │ ────────────────────────────────> │
+     │                                   │  4. Build Docker image
+     │                                   │  5. Push to ECR (eu-north-1)
+     │                                   │  6. Trigger prod deployment
+     │                                   │
+     │                                   ▼
+     │                         ┌─────────────────┐
+     │                         │  Staging Env    │  eu-west-1
+     │                         │  staging.***    │
+     │                         ├─────────────────┤
+     │                         │  Production Env │  eu-north-1
+     │                         │  spaaace.online │
+     │                         └─────────────────┘
+```
+
+| Environment | Branch | Region | Domain |
+|-------------|--------|--------|--------|
+| **Staging** | `develop` | eu-west-1 | staging.spaaace.online |
+| **Production** | `master`/`main` | eu-north-1 | spaaace.online |
+
+See [DEPLOYMENT.md](../spaaace/DEPLOYMENT.md) in the spaaace repo for details.
+
 ## Quick Start
 
 ### Prerequisites
 
 - AWS CLI configured with credentials
 - Terraform >= 1.5.0
-- Docker (for building game server image)
+- Docker (optional, for manual builds)
 
 ### 1. Initialize Terraform
 
@@ -73,11 +106,22 @@ terraform plan
 terraform apply
 ```
 
-### 4. Build and deploy the game server
+### 4. Deploy via GitHub Actions (Recommended)
+
+The CI/CD pipeline is configured across two repositories:
+
+**Option A: Automatic Deployment (on push to main)**
+
+1. Push code to `spaaace` repo `main` branch
+2. GitHub Actions builds and pushes Docker image to ECR
+3. GitHub Actions automatically triggers deployment in `spaaace-tf`
+4. ECS service is updated with the new image
+
+**Option B: Manual Deployment**
 
 ```bash
 # Get the ECR login token
-aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
 
 # Build and push the image
 cd ../../spaaace
@@ -85,8 +129,10 @@ docker build -t spaaace-game .
 docker tag spaaace-game:latest $(terraform output -raw ecr_repository_url):latest
 docker push $(terraform output -raw ecr_repository_url):latest
 
-# Update the ECS service to deploy
-cd ../spaaace-tf/envs/dev
+# Trigger deployment via GitHub Actions
+# Go to spaaace-tf repo → Actions → "Deploy Game" → Run workflow
+
+# Or update the ECS service manually:
 aws ecs update-service --cluster $(terraform output -raw ecs_cluster_name) --service $(terraform output -raw ecs_service_name) --force-new-deployment
 ```
 
@@ -215,7 +261,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed implementation guide.
 ## Environments
 
 ### Dev Environment
-- **3 AZs** for HA testing (`eu-north-1a`, `eu-north-1b`, `eu-north-1c`)
+- **3 AZs** for HA testing (`eu-west-1a`, `eu-west-1b`, `eu-west-1c`)
 - Cost-optimized (t3.small, single NAT gateway)
 - HTTP only (no SSL certificate)
 - Auto-scaling disabled

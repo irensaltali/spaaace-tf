@@ -105,40 +105,42 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# HTTP Listener -> Redirect to HTTPS
-resource "aws_lb_listener" "http" {
-  count = var.enable_http ? 1 : 0
+# HTTP Listener -> Redirect to HTTPS (when HTTPS is enabled)
+resource "aws_lb_listener" "http_redirect" {
+  count = var.enable_http && var.enable_https ? 1 : 0
 
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type = var.enable_https ? "redirect" : "fixed-response"
+    type = "redirect"
 
-    dynamic "redirect" {
-      for_each = var.enable_https ? [1] : []
-      content {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
     }
+  }
+}
 
-    dynamic "fixed_response" {
-      for_each = var.enable_https ? [] : [1]
-      content {
-        content_type = "text/plain"
-        message_body = "OK"
-        status_code  = "200"
-      }
-    }
+# HTTP Listener -> Forward to target group (when HTTPS is disabled)
+resource "aws_lb_listener" "http" {
+  count = var.enable_http && !var.enable_https ? 1 : 0
+
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
   }
 }
 
 # HTTPS Listener (if certificate provided)
 resource "aws_lb_listener" "https" {
-  count = var.enable_https && var.certificate_arn != null ? 1 : 0
+  count = var.enable_https ? 1 : 0
 
   load_balancer_arn = aws_lb.this.arn
   port              = 443
@@ -158,7 +160,7 @@ resource "aws_lb_listener" "https" {
 
 # Target Group for Game Server (WebSocket ready)
 resource "aws_lb_target_group" "this" {
-  name     = "${var.name}-tg"
+  name     = "${var.name}-tg-http"
   port     = var.target_port
   protocol = var.enable_https ? "HTTPS" : "HTTP"
   vpc_id   = var.vpc_id
@@ -202,7 +204,7 @@ resource "aws_lb_target_group" "this" {
 
 # Listener rule to forward to target group
 resource "aws_lb_listener_rule" "game" {
-  count = var.enable_https && var.certificate_arn != null ? 1 : 0
+  count = var.enable_https ? 1 : 0
 
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 100
@@ -219,21 +221,3 @@ resource "aws_lb_listener_rule" "game" {
   }
 }
 
-# HTTP listener rule (if no HTTPS)
-resource "aws_lb_listener_rule" "game_http" {
-  count = var.enable_http && !var.enable_https ? 1 : 0
-
-  listener_arn = aws_lb_listener.http[0].arn
-  priority     = 100
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/*"]
-    }
-  }
-}

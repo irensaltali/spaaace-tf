@@ -23,17 +23,17 @@ output "private_subnet_ids" {
 }
 
 #==============================================================================
-# ECR Outputs
+# ECR Outputs (ECR created by bootstrap environment)
 #==============================================================================
 
 output "ecr_repository_url" {
   description = "URL of the ECR repository"
-  value       = module.ecr.repository_url
+  value       = data.aws_ecr_repository.game.repository_url
 }
 
 output "ecr_repository_name" {
   description = "Name of the ECR repository"
-  value       = module.ecr.repository_name
+  value       = data.aws_ecr_repository.game.name
 }
 
 #==============================================================================
@@ -127,9 +127,9 @@ output "deploy_commands" {
     # Build and push Docker image:
     cd ../spaaace
     docker build -t spaaace-game .
-    docker tag spaaace-game:latest ${module.ecr.repository_url}:latest
-    aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin ${module.ecr.repository_url}
-    docker push ${module.ecr.repository_url}:latest
+    docker tag spaaace-game:latest ${local.ecr_repository_url}:latest
+    aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin ${local.ecr_repository_url}
+    docker push ${local.ecr_repository_url}:latest
     
     # Update ECS service:
     aws ecs update-service --cluster ${module.ecs_cluster.cluster_name} --service ${module.ecs_service.service_name} --force-new-deployment

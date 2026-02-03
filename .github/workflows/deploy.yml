@@ -1,37 +1,102 @@
 name: Deploy Game
 
 on:
+  # Trigger from spaaace repo when new image is pushed
+  repository_dispatch:
+    types: [deploy-game]
+
+  # Manual trigger
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: "Environment to deploy to"
         required: true
-        default: 'dev'
+        default: "staging"
         type: choice
         options:
-          - dev
           - staging
           - prod
+      image_tag:
+        description: "Docker image tag to deploy (default: staging for staging, latest for prod)"
+        required: false
+        default: ""
+        type: string
       deploy_game:
-        description: 'Deploy game server'
+        description: "Deploy game server"
         required: true
         default: true
         type: boolean
       deploy_website:
-        description: 'Deploy website'
+        description: "Deploy website"
         required: true
         default: true
         type: boolean
 
 env:
-  AWS_REGION: eu-north-1
+  # Default regions for each environment
+  STAGING_REGION: eu-west-1
+  PROD_REGION: eu-north-1
 
 jobs:
+  setup:
+    name: Setup Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      region: ${{ steps.set-env.outputs.region }}
+      image_tag: ${{ steps.set-env.outputs.image_tag }}
+      ecr_repository: ${{ steps.set-env.outputs.ecr_repository }}
+    steps:
+      - name: Determine environment and region
+        id: set-env
+        run: |
+          # Determine environment
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            ENV="${{ github.event.client_payload.environment }}"
+          else
+            ENV="${{ github.event.inputs.environment }}"
+          fi
+
+          # Determine region based on environment
+          if [ "$ENV" == "prod" ]; then
+            REGION="${{ env.PROD_REGION }}"
+            DEFAULT_TAG="latest"
+            ECR_REPO="spaaace-prod-game"
+          else
+            REGION="${{ env.STAGING_REGION }}"
+            DEFAULT_TAG="staging"
+            ECR_REPO="spaaace-staging-game"
+          fi
+
+          # Determine image tag
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            if [ "${{ github.event.client_payload.image_tag }}" != "" ]; then
+              IMAGE_TAG="${{ github.event.client_payload.image_tag }}"
+            else
+              IMAGE_TAG="$DEFAULT_TAG"
+            fi
+          elif [ "${{ github.event.inputs.image_tag }}" != "" ]; then
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          else
+            IMAGE_TAG="$DEFAULT_TAG"
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "region=$REGION" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "ecr_repository=$ECR_REPO" >> $GITHUB_OUTPUT
+
+          echo "Environment: $ENV"
+          echo "Region: $REGION"
+          echo "Image Tag: $IMAGE_TAG"
+          echo "ECR Repository: $ECR_REPO"
+
   deploy-game:
     name: Deploy Game Server
     runs-on: ubuntu-latest
-    if: ${{ inputs.deploy_game }}
-    environment: ${{ inputs.environment }}
+    needs: setup
+    if: ${{ github.event.inputs.deploy_game != 'false' && github.event.client_payload.deploy_game != 'false' }}
+    environment: ${{ needs.setup.outputs.environment }}
 
     steps:
       - name: Checkout
@@ -42,76 +107,144 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ needs.setup.outputs.region }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
       - name: Get Terraform Outputs
         id: terraform
-        working-directory: ./spaaace-tf/envs/${{ inputs.environment }}
+        working-directory: ./envs/${{ needs.setup.outputs.environment }}
         run: |
-          echo "ecr_repo=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
-          echo "cluster_name=$(terraform output -raw ecs_cluster_name)" >> $GITHUB_OUTPUT
-          echo "service_name=$(terraform output -raw ecs_service_name)" >> $GITHUB_OUTPUT
+          terraform init -backend=false > /dev/null 2>&1 || true
+          echo "ecr_repo=$(terraform output -raw ecr_repository_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "cluster_name=$(terraform output -raw ecs_cluster_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "service_name=$(terraform output -raw ecs_service_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
-      - name: Build, tag, and push image to Amazon ECR
-        working-directory: ./spaaace
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: spaaace-${{ inputs.environment }}-game
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Determine image URI
+        id: image
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          ENV="${{ needs.setup.outputs.environment }}"
+          IMAGE_TAG="${{ needs.setup.outputs.image_tag }}"
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          ECR_REPOSITORY="${{ needs.setup.outputs.ecr_repository }}"
+
+          # Construct full image URI
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          echo "uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "registry=$ECR_REGISTRY" >> $GITHUB_OUTPUT
+          echo "repository=$ECR_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "Deploying image: $IMAGE_URI"
+
+      - name: Verify image exists
+        run: |
+          aws ecr describe-images \
+            --repository-name ${{ steps.image.outputs.repository }} \
+            --image-ids imageTag=${{ needs.setup.outputs.image_tag }} \
+            --region ${{ needs.setup.outputs.region }} || {
+              echo "Error: Image ${{ needs.setup.outputs.image_tag }} not found in ECR!"
+              exit 1
+            }
 
       - name: Update ECS Service
         run: |
+          CLUSTER_NAME="${{ steps.terraform.outputs.cluster_name }}"
+          SERVICE_NAME="${{ steps.terraform.outputs.service_name }}"
+
+          echo "Updating ECS service: $SERVICE_NAME in cluster: $CLUSTER_NAME"
+          echo "Image: ${{ steps.image.outputs.uri }}"
+
           aws ecs update-service \
-            --cluster ${{ steps.terraform.outputs.cluster_name }} \
-            --service ${{ steps.terraform.outputs.service_name }} \
-            --force-new-deployment
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
+            --force-new-deployment \
+            --region ${{ needs.setup.outputs.region }}
 
       - name: Wait for deployment
         run: |
+          echo "Waiting for ECS service to stabilize..."
           aws ecs wait services-stable \
             --cluster ${{ steps.terraform.outputs.cluster_name }} \
-            --services ${{ steps.terraform.outputs.service_name }}
+            --services ${{ steps.terraform.outputs.service_name }} \
+            --region ${{ needs.setup.outputs.region }}
+          echo "Deployment complete!"
+
+      - name: Deployment Summary
+        run: |
+          echo "=== Deployment Summary ==="
+          echo "Environment: ${{ needs.setup.outputs.environment }}"
+          echo "Region: ${{ needs.setup.outputs.region }}"
+          echo "Image Tag: ${{ needs.setup.outputs.image_tag }}"
+          echo "Image URI: ${{ steps.image.outputs.uri }}"
+          echo "ECS Cluster: ${{ steps.terraform.outputs.cluster_name }}"
+          echo "ECS Service: ${{ steps.terraform.outputs.service_name }}"
+
+          if [ "${{ github.event.client_payload.commit_sha }}" != "" ]; then
+            echo "Source Commit: ${{ github.event.client_payload.commit_sha }}"
+            echo "Commit Message: ${{ github.event.client_payload.commit_message }}"
+            echo "Source Branch: ${{ github.event.client_payload.branch }}"
+          fi
 
   deploy-website:
     name: Deploy Website
     runs-on: ubuntu-latest
-    if: ${{ inputs.deploy_website }}
-    environment: ${{ inputs.environment }}
+    needs: setup
+    if: ${{ github.event.inputs.deploy_website != 'false' && github.event.client_payload.deploy_website != 'false' }}
+    environment: ${{ needs.setup.outputs.environment }}
 
     steps:
-      - name: Checkout
+      - name: Checkout spaaace-tf
         uses: actions/checkout@v4
+
+      - name: Checkout spaaace (for website files)
+        uses: actions/checkout@v4
+        with:
+          repository: irensaltali/spaaace
+          path: spaaace
+          token: ${{ secrets.SOURCE_REPO_PAT || secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.client_payload.branch || (needs.setup.outputs.environment == 'prod' && 'master') || 'develop' }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ needs.setup.outputs.region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
 
       - name: Get Terraform Outputs
         id: terraform
-        working-directory: ./spaaace-tf/envs/${{ inputs.environment }}
+        working-directory: ./envs/${{ needs.setup.outputs.environment }}
         run: |
-          echo "bucket_name=$(terraform output -raw website_bucket_name)" >> $GITHUB_OUTPUT
-          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> $GITHUB_OUTPUT
+          terraform init -backend=false > /dev/null 2>&1 || true
+          echo "bucket_name=$(terraform output -raw website_bucket_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Deploy to S3
         working-directory: ./spaaace
         run: |
-          aws s3 sync dist/ s3://${{ steps.terraform.outputs.bucket_name }}/ --delete
+          if [ -d "dist" ]; then
+            aws s3 sync dist/ s3://${{ steps.terraform.outputs.bucket_name }}/ --delete --region ${{ needs.setup.outputs.region }}
+            echo "Website deployed to S3"
+          else
+            echo "Warning: dist/ directory not found. Skipping website deployment."
+          fi
 
       - name: Invalidate CloudFront Cache
+        if: steps.terraform.outputs.distribution_id != ''
         run: |
           aws cloudfront create-invalidation \
             --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
             --paths "/*"
+          echo "CloudFront cache invalidated"

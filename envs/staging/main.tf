@@ -1,10 +1,8 @@
-# Spaaace Game - Dev Environment
+# Spaaace Game - Staging Environment
+# Region: eu-west-1
+# Domain: staging.spaaace.online
+#
 # High Availability Architecture: ECS + Redis (ElastiCache) Multi-AZ
-# 
-# This architecture ensures game state survives:
-# - Node (Container) crashes: ECS auto-restarts, Redis hydrates state
-# - EC2 failures: ASG replaces instances, Redis retains state
-# - AZ outages: Multi-AZ failover, ALB routes to healthy AZs
 
 terraform {
   required_version = ">= 1.5.0"
@@ -16,17 +14,15 @@ terraform {
     }
   }
 
-  # Terraform Cloud Configuration
-  # Uncomment and configure after creating workspace:
+  # Terraform Cloud Configuration (recommended for staging)
   # cloud {
   #   organization = "your-org-name"
   #   workspaces {
-  #     name = "spaaace-dev"
+  #     name = "spaaace-staging"
   #   }
   # }
 
-  # Local backend for initial development
-  # Replace with Terraform Cloud for production
+  # Local backend for now
   backend "local" {
     path = "terraform.tfstate"
   }
@@ -34,6 +30,20 @@ terraform {
 
 provider "aws" {
   region  = var.aws_region
+  profile = var.aws_profile
+
+  default_tags {
+    tags = {
+      Project     = "spaaace"
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+provider "aws" {
+  alias   = "us_east_1"
+  region  = "us-east-1"
   profile = var.aws_profile
 
   default_tags {
@@ -71,8 +81,8 @@ module "vpc" {
   public_subnets  = var.public_subnets
   private_subnets = var.private_subnets
 
-  single_nat_gateway = true  # Cost-saving for dev (use false for prod)
-  enable_flow_logs   = false # Disable for dev (cost)
+  single_nat_gateway = true # Cost-saving for staging
+  enable_flow_logs   = false
 
   tags = local.common_tags
 }
@@ -87,9 +97,50 @@ module "ecr" {
 
   image_tag_mutability = "MUTABLE"
   scan_on_push         = true
-  keep_images_count    = 10
+  keep_images_count    = 20
 
   tags = local.common_tags
+}
+
+locals {
+  ecr_repository_url = module.ecr.repository_url
+}
+
+#==============================================================================
+# Use Existing ACM Certificate for HTTPS
+#==============================================================================
+
+# Find existing wildcard certificate in eu-west-1 (for ALB)
+# Only look up certificate if HTTPS is enabled and no ARN is provided
+data "aws_acm_certificate" "alb" {
+  count       = var.enable_https && var.alb_certificate_arn == "" ? 1 : 0
+  domain      = "*.spaaace.online"
+  most_recent = true
+  statuses    = ["ISSUED"]
+}
+
+# Create the Route53 hosted zone for staging
+data "aws_route53_zone" "parent" {
+  count = var.create_hosted_zone ? 0 : 1
+
+  # Look up the existing hosted zone (parent zone for subdomain)
+  # For staging.spaaace.online, look up spaaace.online
+  name         = "spaaace.online"
+  private_zone = false
+}
+
+resource "aws_route53_zone" "this" {
+  count = var.create_hosted_zone ? 1 : 0
+
+  name = var.domain_name
+
+  tags = local.common_tags
+}
+
+locals {
+  route53_zone_id = var.create_hosted_zone ? aws_route53_zone.this[0].zone_id : data.aws_route53_zone.parent[0].zone_id
+  # Use provided certificate ARN, or look it up, or null if HTTPS is disabled
+  certificate_arn = var.enable_https ? (var.alb_certificate_arn != "" ? var.alb_certificate_arn : try(data.aws_acm_certificate.alb[0].arn, null)) : null
 }
 
 #==============================================================================
@@ -102,16 +153,17 @@ module "alb" {
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
 
-  enable_http  = true
-  enable_https = false # Start with HTTP for dev, enable HTTPS with certificate later
+  enable_http     = true
+  enable_https    = var.enable_https
+  certificate_arn = local.certificate_arn
 
   target_port          = 3000
-  idle_timeout         = 120       # Important for WebSockets - long-lived connections
-  health_check_path    = "/health" # Dedicated health endpoint for game server
-  deregistration_delay = 30        # Quick deregistration for faster failover
+  idle_timeout         = 120
+  health_check_path    = "/health"
+  deregistration_delay = 30
 
-  enable_stickiness   = true  # CRITICAL: WebSocket connections must stick to same instance
-  stickiness_duration = 86400 # 24 hours
+  enable_stickiness   = true
+  stickiness_duration = 86400
 
   enable_deletion_protection = false
 
@@ -144,10 +196,6 @@ module "ecs_cluster" {
 
 #==============================================================================
 # ElastiCache (Redis) - Multi-AZ for Game State Persistence
-# 
-# CRITICAL: This is what allows game state to survive node crashes.
-# When a node crashes, players disconnect briefly, then reconnect to
-# a new node which hydrates game state from Redis.
 #==============================================================================
 module "redis" {
   source = "../../modules/elasticache"
@@ -158,23 +206,18 @@ module "redis" {
   private_subnet_ids    = module.vpc.private_subnet_ids
   ecs_security_group_id = module.ecs_cluster.instance_security_group_id
 
-  # Multi-AZ configuration for HA
   multi_az_enabled           = true
   automatic_failover_enabled = true
-  num_cache_clusters         = 2 # Primary + Replica across different AZs
+  num_cache_clusters         = 2
 
-  # Node configuration (cache.t4g.micro is free tier eligible)
-  node_type = "cache.t4g.micro"
+  node_type = "cache.t4g.small"
 
-  # Persistence for game state durability
-  at_rest_encryption_enabled = false # Set to true for production
-  transit_encryption_enabled = false # Set to true for production with auth_token
+  at_rest_encryption_enabled = false
+  transit_encryption_enabled = false
 
-  # Backup configuration
-  snapshot_retention_limit = 3 # Keep 3 days of backups for dev
+  snapshot_retention_limit = 7
   snapshot_window          = "03:00-04:00"
 
-  # Alarms disabled for dev
   enable_alarms = false
 
   tags = local.common_tags
@@ -191,50 +234,61 @@ module "ecs_service" {
   cluster_name           = module.ecs_cluster.cluster_name
   capacity_provider_name = module.ecs_cluster.capacity_provider_name
 
-  container_image = "${module.ecr.repository_url}:latest"
+  container_image = "${local.ecr_repository_url}:staging"
   container_port  = 3000
 
-  cpu    = 256 # 0.25 vCPU
-  memory = 512 # 512 MB
+  cpu    = 256
+  memory = 512
 
   desired_count = var.game_desired_count
 
   execution_role_arn = module.ecs_cluster.task_execution_role_arn
 
-  # Environment variables for game server
-  # REDIS_URL allows the game server to persist/restore game state
   environment_variables = {
     PORT                   = "3000"
     NODE_ENV               = "production"
     REDIS_URL              = module.redis.connection_string
     REDIS_ENABLED          = "true"
-    GAME_HYDRATION_ENABLED = "true" # Enable state hydration on startup
+    GAME_HYDRATION_ENABLED = "true"
+    ENVIRONMENT            = "staging"
   }
 
   aws_region = data.aws_region.current.name
 
   target_group_arn = module.alb.target_group_arn
 
-  # Deployment settings
   enable_deployment_circuit_breaker = true
   enable_deployment_rollback        = true
   health_check_grace_period_seconds = 60
 
-  # Container health check - must match ALB health check path
   health_check_enabled = true
   health_check_command = ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
 
-  # Auto-scaling (disabled for dev, enable for production)
   enable_autoscaling = var.enable_autoscaling
   min_count          = var.game_min_count
   max_count          = var.game_max_count
 
-  # Alarms (disabled for dev)
   enable_alarms = false
 
   tags = local.common_tags
 
   depends_on = [module.ecs_cluster, module.redis]
+}
+
+# Note: CloudFront requires ACM certificate from us-east-1
+# Using existing wildcard certificate: *.spaaace.online
+
+# Use existing wildcard certificate from us-east-1 (only if custom domain is enabled)
+data "aws_acm_certificate" "cloudfront" {
+  provider    = aws.us_east_1
+  count       = var.enable_cloudfront_custom_domain && var.cloudfront_certificate_arn == "" ? 1 : 0
+  domain      = "*.spaaace.online"
+  most_recent = true
+  statuses    = ["ISSUED"]
+}
+
+locals {
+  cloudfront_certificate_arn = var.enable_cloudfront_custom_domain ? (var.cloudfront_certificate_arn != "" ? var.cloudfront_certificate_arn : try(data.aws_acm_certificate.cloudfront[0].arn, null)) : null
 }
 
 #==============================================================================
@@ -246,41 +300,46 @@ module "website" {
   bucket_name = "${local.prefix}-website-${data.aws_caller_identity.current.account_id}"
 
   index_document = "index.html"
-  error_document = "index.html" # SPA pattern - serve index.html for all routes
+  error_document = "index.html"
 
   cloudfront_comment = "${local.prefix} website"
-  price_class        = "PriceClass_100" # North America and Europe only (cost-saving)
+  price_class        = "PriceClass_100"
 
-  # Custom domain (when ready)
-  # aliases = ["www.${var.domain_name}"]
-  # certificate_arn = module.route53.certificate_validation_arn
+  # Custom domain configuration (only if enabled)
+  aliases         = var.enable_cloudfront_custom_domain ? [var.domain_name] : []
+  certificate_arn = local.cloudfront_certificate_arn
 
-  # Route53 integration (when ready)
-  # route53_zone_id = module.route53.zone_id
+  # Route53 integration for DNS
+  route53_zone_id = var.enable_cloudfront_custom_domain ? local.route53_zone_id : null
 
   tags = local.common_tags
 }
 
 #==============================================================================
-# Route53 - DNS Management
+# Route53 - DNS Records
 #==============================================================================
-# Uncomment when domain is ready:
-# module "route53" {
-#   source = "../../modules/route53"
-#
-#   domain_name = var.domain_name
-#   create_hosted_zone = false  # Use existing zone
-#
-#   game_subdomain = "game"
-#   www_subdomain  = "www"
-#
-#   game_alb_dns_name = module.alb.alb_dns_name
-#   game_alb_zone_id  = module.alb.alb_zone_id
-#
-#   cloudfront_domain_name = module.website.cloudfront_domain_name
-#
-#   create_apex_record = true
-#   create_health_check = false
-#
-#   tags = local.common_tags
-# }
+
+# Game server record (ALB) - game.staging.spaaace.online
+resource "aws_route53_record" "game" {
+  zone_id = local.route53_zone_id
+  name    = "game.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.alb.alb_dns_name
+    zone_id                = module.alb.alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+# Website A record (CloudFront) - staging.spaaace.online
+# NOTE: The s3-website module creates A and AAAA records via route53_zone_id
+
+# WWW redirect record - www.staging.spaaace.online -> staging.spaaace.online
+resource "aws_route53_record" "www" {
+  zone_id = local.route53_zone_id
+  name    = "www.${var.domain_name}"
+  type    = "CNAME"
+  ttl     = 300
+  records = [var.domain_name]
+}

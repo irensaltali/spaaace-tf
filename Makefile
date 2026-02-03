@@ -3,7 +3,7 @@
 .PHONY: help init plan apply destroy deploy-game deploy-website validate fmt
 
 ENV ?= dev
-AWS_REGION ?= eu-north-1
+AWS_REGION ?= eu-west-1
 
 help: ## Show this help
 	@echo "Spaaace Infrastructure Commands:"
