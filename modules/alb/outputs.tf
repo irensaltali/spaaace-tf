@@ -29,8 +29,8 @@ output "target_group_name" {
 }
 
 output "http_listener_arn" {
-  description = "ARN of the HTTP listener"
-  value       = var.enable_http ? aws_lb_listener.http[0].arn : null
+  description = "ARN of the HTTP listener (forward or redirect)"
+  value       = var.enable_http ? (var.enable_https ? aws_lb_listener.http_redirect[0].arn : aws_lb_listener.http[0].arn) : null
 }
 
 output "https_listener_arn" {

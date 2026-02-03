@@ -211,6 +211,19 @@ jobs:
           token: ${{ secrets.SOURCE_REPO_PAT || secrets.GITHUB_TOKEN }}
           ref: ${{ github.event.client_payload.branch || (needs.setup.outputs.environment == 'prod' && 'master') || 'develop' }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: spaaace/package-lock.json
+
+      - name: Install and Build Website
+        working-directory: ./spaaace
+        run: |
+          npm ci
+          npm run build
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

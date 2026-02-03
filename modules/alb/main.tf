@@ -160,7 +160,7 @@ resource "aws_lb_listener" "https" {
 
 # Target Group for Game Server (WebSocket ready)
 resource "aws_lb_target_group" "this" {
-  name     = "${var.name}-tg-http"
+  name     = "${var.name}-tg-${var.enable_https ? "https" : "http"}"
   port     = var.target_port
   protocol = var.enable_https ? "HTTPS" : "HTTP"
   vpc_id   = var.vpc_id
