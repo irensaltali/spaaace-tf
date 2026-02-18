@@ -132,7 +132,7 @@ variable "health_check_enabled" {
 variable "health_check_command" {
   description = "Health check command"
   type        = list(string)
-  default     = ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+  default     = ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', function (r) { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', function () { process.exit(1); });\""]
 }
 
 variable "enable_autoscaling" {

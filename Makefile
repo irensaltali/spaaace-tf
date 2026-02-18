@@ -2,8 +2,9 @@
 
 .PHONY: help init plan apply destroy deploy-game deploy-website validate fmt
 
-ENV ?= dev
+ENV ?= staging
 AWS_REGION ?= eu-west-1
+IMAGE_TAG ?= $(if $(filter prod,$(ENV)),latest,$(ENV))
 
 help: ## Show this help
 	@echo "Spaaace Infrastructure Commands:"
@@ -40,16 +41,16 @@ deploy-game: ## Build and deploy game server Docker image
 	cd ../spaaace && docker build -t spaaace-game:latest .
 	
 	@echo "Getting ECR login token..."
-	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $$(cd spaaace-tf/envs/$(ENV) && terraform output -raw ecr_repository_url)
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw ecr_repository_url)
 	
 	@echo "Tagging and pushing image..."
-	cd ../spaaace && docker tag spaaace-game:latest $$(cd ../spaaace-tf/envs/$(ENV) && terraform output -raw ecr_repository_url):latest
-	cd ../spaaace && docker push $$(cd ../spaaace-tf/envs/$(ENV) && terraform output -raw ecr_repository_url):latest
+	cd ../spaaace && docker tag spaaace-game:latest $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw ecr_repository_url):$(IMAGE_TAG)
+	cd ../spaaace && docker push $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw ecr_repository_url):$(IMAGE_TAG)
 	
 	@echo "Updating ECS service..."
 	aws ecs update-service \
-		--cluster $$(cd envs/$(ENV) && terraform output -raw ecs_cluster_name) \
-		--service $$(cd envs/$(ENV) && terraform output -raw ecs_service_name) \
+		--cluster $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw ecs_cluster_name) \
+		--service $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw ecs_service_name) \
 		--force-new-deployment
 	
 	@echo "Game server deployed successfully!"
@@ -60,11 +61,11 @@ deploy-game: ## Build and deploy game server Docker image
 
 deploy-website: ## Deploy website to S3/CloudFront
 	@echo "Deploying website to S3..."
-	aws s3 sync ../spaaace/dist/ s3://$$(cd envs/$(ENV) && terraform output -raw website_bucket_name)/ --delete
+	aws s3 sync ../spaaace/dist/ s3://$$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw website_bucket_name)/ --delete
 	
 	@echo "Invalidating CloudFront cache..."
 	aws cloudfront create-invalidation \
-		--distribution-id $$(cd envs/$(ENV) && terraform output -raw cloudfront_distribution_id) \
+		--distribution-id $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw cloudfront_distribution_id) \
 		--paths "/*"
 	
 	@echo "Website deployed successfully!"
@@ -96,4 +97,4 @@ deploy-all: deploy-game deploy-website ## Deploy both game server and website
 #------------------------------------------------------------------------------
 
 setup-ecr: ## Authenticate Docker with ECR
-	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $$(cd spaaace-tf/envs/$(ENV) && terraform output -raw ecr_repository_url)
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $$(cd $(CURDIR)/envs/$(ENV) && terraform output -raw ecr_repository_url)

@@ -90,7 +90,7 @@ See [DEPLOYMENT.md](../spaaace/DEPLOYMENT.md) in the spaaace repo for details.
 ### 1. Initialize Terraform
 
 ```bash
-cd envs/dev
+cd envs/staging
 terraform init
 ```
 
@@ -160,9 +160,9 @@ spaaace-tf/
 │   ├── s3-website/    # S3 + CloudFront for static site
 │   └── route53/       # DNS management
 ├── envs/
-│   ├── dev/           # Development environment
-│   ├── staging/       # Staging environment (future)
-│   └── prod/          # Production environment (future)
+│   ├── staging/       # Staging environment
+│   ├── prod/          # Production environment
+│   └── bootstrap/     # Bootstrap environment (ECR and shared resources)
 └── README.md
 ```
 
@@ -260,7 +260,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed implementation guide.
 
 ## Environments
 
-### Dev Environment
+### Staging Environment
 - **3 AZs** for HA testing (`eu-west-1a`, `eu-west-1b`, `eu-west-1c`)
 - Cost-optimized (t3.small, single NAT gateway)
 - HTTP only (no SSL certificate)
@@ -277,17 +277,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed implementation guide.
 ## Terraform Cloud Setup
 
 1. Create organization at https://app.terraform.io
-2. Create workspace `spaaace-dev`
+2. Create workspace `spaaace-staging`
 3. Configure AWS credentials as environment variables:
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
    - `AWS_DEFAULT_REGION`
-4. Update `envs/dev/main.tf` to use Terraform Cloud backend
+4. Update `envs/staging/main.tf` to use Terraform Cloud backend
 
 ## Domain Setup
 
 1. Register domain `spaaace.online` in Route53 or transfer existing
-2. Uncomment Route53 module in `envs/dev/main.tf`
+2. Configure Route53 settings in `envs/staging/main.tf` (or `envs/prod/main.tf`)
 3. Request ACM certificate for the domain
 4. Update ALB to use HTTPS
 5. Run `terraform apply`
@@ -299,7 +299,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed implementation guide.
 - CloudWatch Alarms (optional)
 - Redis CloudWatch metrics for cache performance
 
-## Cost Estimation (Dev)
+## Cost Estimation (Staging)
 
 | Resource | Monthly Cost |
 |----------|-------------|
@@ -319,7 +319,7 @@ Use spot instances to save ~60% on EC2 costs.
 ### ECS tasks not starting
 Check CloudWatch logs:
 ```bash
-aws logs tail /ecs/spaaace-dev-game --follow
+aws logs tail /ecs/spaaace-staging-game --follow
 ```
 
 ### WebSocket connections dropping

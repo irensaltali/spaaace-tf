@@ -206,7 +206,7 @@ module "ecs_service" {
   health_check_grace_period_seconds = 120 # Longer for production
 
   health_check_enabled = true
-  health_check_command = ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+  health_check_command = ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', function (r) { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', function () { process.exit(1); });\""]
 
   enable_autoscaling = var.enable_autoscaling
   min_count          = var.game_min_count

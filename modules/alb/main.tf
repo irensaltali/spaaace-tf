@@ -160,9 +160,12 @@ resource "aws_lb_listener" "https" {
 
 # Target Group for Game Server (WebSocket ready)
 resource "aws_lb_target_group" "this" {
-  name     = "${var.name}-tg-${var.enable_https ? "https" : "http"}"
-  port     = var.target_port
-  protocol = var.enable_https ? "HTTPS" : "HTTP"
+  # Use name_prefix so replacement can be created before the old TG is destroyed.
+  # A fixed name conflicts with create_before_destroy on forced-replacement updates.
+  name_prefix = "spg"
+  port        = var.target_port
+  # TLS terminates at ALB. ECS tasks behind ALB serve plain HTTP.
+  protocol = "HTTP"
   vpc_id   = var.vpc_id
 
   # Target type: instance for EC2-backed ECS
@@ -177,7 +180,7 @@ resource "aws_lb_target_group" "this" {
     interval            = 30
     path                = var.health_check_path
     port                = "traffic-port"
-    protocol            = var.enable_https ? "HTTPS" : "HTTP"
+    protocol            = "HTTP"
     matcher             = "200"
   }
 
@@ -220,4 +223,3 @@ resource "aws_lb_listener_rule" "game" {
     }
   }
 }
-

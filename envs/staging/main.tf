@@ -113,7 +113,8 @@ locals {
 # Find existing wildcard certificate in eu-west-1 (for ALB)
 # Only look up certificate if HTTPS is enabled and no ARN is provided
 data "aws_acm_certificate" "alb" {
-  count       = var.enable_https && var.alb_certificate_arn == "" ? 1 : 0
+  count = var.enable_https && var.alb_certificate_arn == "" ? 1 : 0
+  # Must cover game-staging.spaaace.online
   domain      = "*.spaaace.online"
   most_recent = true
   statuses    = ["ISSUED"]
@@ -262,7 +263,7 @@ module "ecs_service" {
   health_check_grace_period_seconds = 60
 
   health_check_enabled = true
-  health_check_command = ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+  health_check_command = ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', function (r) { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', function () { process.exit(1); });\""]
 
   enable_autoscaling = var.enable_autoscaling
   min_count          = var.game_min_count
@@ -319,10 +320,10 @@ module "website" {
 # Route53 - DNS Records
 #==============================================================================
 
-# Game server record (ALB) - game.staging.spaaace.online
+# Game server record (ALB) - game-staging.spaaace.online
 resource "aws_route53_record" "game" {
   zone_id = local.route53_zone_id
-  name    = "game.${var.domain_name}"
+  name    = "game-${var.environment}"
   type    = "A"
 
   alias {

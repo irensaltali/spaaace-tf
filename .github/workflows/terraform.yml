@@ -3,14 +3,19 @@ name: Terraform
 on:
   push:
     branches:
+      - develop
       - main
       - master
     paths:
-      - "spaaace-tf/**"
+      - "envs/**"
+      - "modules/**"
+      - "Makefile"
       - ".github/workflows/terraform.yml"
   pull_request:
     paths:
-      - "spaaace-tf/**"
+      - "envs/**"
+      - "modules/**"
+      - "Makefile"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
     inputs:
@@ -20,7 +25,6 @@ on:
         default: "staging"
         type: choice
         options:
-          - dev
           - staging
           - prod
       action:
@@ -35,7 +39,6 @@ on:
 env:
   TF_IN_AUTOMATION: true
   # Region mapping
-  DEV_REGION: eu-west-1
   STAGING_REGION: eu-west-1
   PROD_REGION: eu-north-1
 
@@ -64,11 +67,8 @@ jobs:
             prod)
               REGION="${{ env.PROD_REGION }}"
               ;;
-            staging)
-              REGION="${{ env.STAGING_REGION }}"
-              ;;
             *)
-              REGION="${{ env.DEV_REGION }}"
+              REGION="${{ env.STAGING_REGION }}"
               ;;
           esac
 
@@ -83,7 +83,7 @@ jobs:
     needs: setup
     defaults:
       run:
-        working-directory: ./spaaace-tf/envs/${{ needs.setup.outputs.environment }}
+        working-directory: ./envs/${{ needs.setup.outputs.environment }}
 
     steps:
       - name: Checkout
@@ -161,8 +161,8 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-      - name: Terraform Apply (Auto)
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push' && needs.setup.outputs.environment != 'prod'
+      - name: Terraform Apply (Auto Staging)
+        if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
         run: terraform apply -auto-approve
 
       - name: Terraform Apply (Manual)
