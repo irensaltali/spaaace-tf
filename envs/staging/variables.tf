@@ -11,11 +11,17 @@ variable "environment" {
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "eu-north-1"
+  default     = "eu-west-1"
 }
 
 variable "aws_profile" {
   description = "AWS profile to use for authentication (null to use default credentials)"
+  type        = string
+  default     = null
+}
+
+variable "ssh_key_name" {
+  description = "Name of the SSH key pair to associate with EC2 instances"
   type        = string
   default     = null
 }

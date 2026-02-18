@@ -20,6 +20,12 @@ variable "aws_profile" {
   default     = "irensaltali"
 }
 
+variable "ssh_key_name" {
+  description = "Name of the SSH key pair to associate with EC2 instances"
+  type        = string
+  default     = null
+}
+
 variable "domain_name" {
   description = "Root domain name"
   type        = string

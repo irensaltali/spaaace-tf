@@ -54,6 +54,12 @@ variable "spot_max_price" {
   default     = null
 }
 
+variable "ssh_key_name" {
+  description = "Name of the SSH key pair to associate with EC2 instances"
+  type        = string
+  default     = null
+}
+
 variable "enable_container_insights" {
   description = "Enable CloudWatch Container Insights"
   type        = bool

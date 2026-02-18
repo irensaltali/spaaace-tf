@@ -22,9 +22,13 @@ terraform {
   #   }
   # }
 
-  # Local backend for now - migrate to remote for production
-  backend "local" {
-    path = "terraform.tfstate"
+  # Remote backend (S3)
+  backend "s3" {
+    bucket         = "spaaace-terraform-state-prod"
+    key            = "prod/terraform.tfstate"
+    region         = "eu-north-1"
+    dynamodb_table = "terraform-state-locks-prod"
+    encrypt        = true
   }
 }
 
@@ -129,6 +133,8 @@ module "ecs_cluster" {
   min_size         = var.ecs_min_size
   max_size         = var.ecs_max_size
   desired_capacity = var.ecs_desired_capacity
+
+  ssh_key_name = var.ssh_key_name
 
   use_spot_instances = var.use_spot_instances
   spot_max_price     = var.spot_max_price

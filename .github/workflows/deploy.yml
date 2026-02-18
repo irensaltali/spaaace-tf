@@ -46,6 +46,7 @@ jobs:
       region: ${{ steps.set-env.outputs.region }}
       image_tag: ${{ steps.set-env.outputs.image_tag }}
       ecr_repository: ${{ steps.set-env.outputs.ecr_repository }}
+      resource_prefix: ${{ steps.set-env.outputs.resource_prefix }}
     steps:
       - name: Determine environment and region
         id: set-env
@@ -85,6 +86,7 @@ jobs:
           echo "region=$REGION" >> $GITHUB_OUTPUT
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "ecr_repository=$ECR_REPO" >> $GITHUB_OUTPUT
+          echo "resource_prefix=spaaace-$ENV" >> $GITHUB_OUTPUT
 
           echo "Environment: $ENV"
           echo "Region: $REGION"
@@ -113,19 +115,43 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.7.0"
-
-      - name: Get Terraform Outputs
-        id: terraform
-        working-directory: ./envs/${{ needs.setup.outputs.environment }}
+      - name: Resolve ECS resource names
+        id: infra
         run: |
-          terraform init -backend=false > /dev/null 2>&1 || true
-          echo "ecr_repo=$(terraform output -raw ecr_repository_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "cluster_name=$(terraform output -raw ecs_cluster_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "service_name=$(terraform output -raw ecs_service_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          PREFIX="${{ needs.setup.outputs.resource_prefix }}"
+          echo "cluster_name=$PREFIX" >> $GITHUB_OUTPUT
+          echo "service_name=${PREFIX}-game" >> $GITHUB_OUTPUT
+
+      - name: Verify ECS resources exist
+        run: |
+          CLUSTER_NAME="${{ steps.infra.outputs.cluster_name }}"
+          SERVICE_NAME="${{ steps.infra.outputs.service_name }}"
+          REGION="${{ needs.setup.outputs.region }}"
+
+          CLUSTER_STATUS=$(aws ecs describe-clusters \
+            --clusters "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query 'clusters[0].status' \
+            --output text 2>/dev/null || echo "MISSING")
+
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "Error: ECS cluster '$CLUSTER_NAME' is missing in region '$REGION'."
+            echo "Run Terraform apply for ${{ needs.setup.outputs.environment }} first."
+            exit 1
+          fi
+
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --region "$REGION" \
+            --query 'services[0].status' \
+            --output text 2>/dev/null || echo "MISSING")
+
+          if [ "$SERVICE_STATUS" = "MISSING" ] || [ "$SERVICE_STATUS" = "None" ]; then
+            echo "Error: ECS service '$SERVICE_NAME' is missing in cluster '$CLUSTER_NAME'."
+            echo "Run Terraform apply for ${{ needs.setup.outputs.environment }} first."
+            exit 1
+          fi
 
       - name: Determine image URI
         id: image
@@ -155,8 +181,8 @@ jobs:
 
       - name: Update ECS Service
         run: |
-          CLUSTER_NAME="${{ steps.terraform.outputs.cluster_name }}"
-          SERVICE_NAME="${{ steps.terraform.outputs.service_name }}"
+          CLUSTER_NAME="${{ steps.infra.outputs.cluster_name }}"
+          SERVICE_NAME="${{ steps.infra.outputs.service_name }}"
 
           echo "Updating ECS service: $SERVICE_NAME in cluster: $CLUSTER_NAME"
           echo "Image: ${{ steps.image.outputs.uri }}"
@@ -171,8 +197,8 @@ jobs:
         run: |
           echo "Waiting for ECS service to stabilize..."
           aws ecs wait services-stable \
-            --cluster ${{ steps.terraform.outputs.cluster_name }} \
-            --services ${{ steps.terraform.outputs.service_name }} \
+            --cluster ${{ steps.infra.outputs.cluster_name }} \
+            --services ${{ steps.infra.outputs.service_name }} \
             --region ${{ needs.setup.outputs.region }}
           echo "Deployment complete!"
 
@@ -183,8 +209,8 @@ jobs:
           echo "Region: ${{ needs.setup.outputs.region }}"
           echo "Image Tag: ${{ needs.setup.outputs.image_tag }}"
           echo "Image URI: ${{ steps.image.outputs.uri }}"
-          echo "ECS Cluster: ${{ steps.terraform.outputs.cluster_name }}"
-          echo "ECS Service: ${{ steps.terraform.outputs.service_name }}"
+          echo "ECS Cluster: ${{ steps.infra.outputs.cluster_name }}"
+          echo "ECS Service: ${{ steps.infra.outputs.service_name }}"
 
           if [ "${{ github.event.client_payload.commit_sha }}" != "" ]; then
             echo "Source Commit: ${{ github.event.client_payload.commit_sha }}"
@@ -231,33 +257,41 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ needs.setup.outputs.region }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.7.0"
-
-      - name: Get Terraform Outputs
-        id: terraform
-        working-directory: ./envs/${{ needs.setup.outputs.environment }}
+      - name: Resolve website resources
+        id: website
         run: |
-          terraform init -backend=false > /dev/null 2>&1 || true
-          echo "bucket_name=$(terraform output -raw website_bucket_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+          PREFIX="${{ needs.setup.outputs.resource_prefix }}"
+          BUCKET_NAME="${PREFIX}-website-${ACCOUNT_ID}"
+          DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${PREFIX} website'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "distribution_id=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+
+      - name: Verify website bucket exists
+        run: |
+          aws s3api head-bucket --bucket "${{ steps.website.outputs.bucket_name }}" || {
+            echo "Error: S3 bucket '${{ steps.website.outputs.bucket_name }}' not found."
+            echo "Run Terraform apply for ${{ needs.setup.outputs.environment }} first."
+            exit 1
+          }
 
       - name: Deploy to S3
         working-directory: ./spaaace
         run: |
           if [ -d "dist" ]; then
-            aws s3 sync dist/ s3://${{ steps.terraform.outputs.bucket_name }}/ --delete --region ${{ needs.setup.outputs.region }}
+            aws s3 sync dist/ s3://${{ steps.website.outputs.bucket_name }}/ --delete --region ${{ needs.setup.outputs.region }}
             echo "Website deployed to S3"
           else
             echo "Warning: dist/ directory not found. Skipping website deployment."
           fi
 
       - name: Invalidate CloudFront Cache
-        if: steps.terraform.outputs.distribution_id != ''
+        if: steps.website.outputs.distribution_id != '' && steps.website.outputs.distribution_id != 'None'
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
+            --distribution-id ${{ steps.website.outputs.distribution_id }} \
             --paths "/*"
           echo "CloudFront cache invalidated"

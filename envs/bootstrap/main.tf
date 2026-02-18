@@ -113,6 +113,100 @@ resource "aws_route53_zone" "prod" {
 }
 
 #==============================================================================
+# Terraform State Backend Resources
+#==============================================================================
+
+# Staging State Bucket
+resource "aws_s3_bucket" "terraform_state_staging" {
+  provider = aws.staging
+  bucket   = "spaaace-terraform-state-staging"
+
+  tags = {
+    Name        = "Terraform State Store Staging"
+    Environment = "staging"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "staging_versioning" {
+  provider = aws.staging
+  bucket   = aws_s3_bucket.terraform_state_staging.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "staging_encryption" {
+  provider = aws.staging
+  bucket   = aws_s3_bucket.terraform_state_staging.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Staging State Lock Table
+resource "aws_dynamodb_table" "terraform_locks_staging" {
+  provider     = aws.staging
+  name         = "terraform-state-locks-staging"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+  tags = {
+    Name        = "Terraform State Lock Table Staging"
+    Environment = "staging"
+  }
+}
+
+# Production State Bucket
+resource "aws_s3_bucket" "terraform_state_prod" {
+  provider = aws.prod
+  bucket   = "spaaace-terraform-state-prod"
+
+  tags = {
+    Name        = "Terraform State Store Production"
+    Environment = "prod"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "prod_versioning" {
+  provider = aws.prod
+  bucket   = aws_s3_bucket.terraform_state_prod.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "prod_encryption" {
+  provider = aws.prod
+  bucket   = aws_s3_bucket.terraform_state_prod.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Production State Lock Table
+resource "aws_dynamodb_table" "terraform_locks_prod" {
+  provider     = aws.prod
+  name         = "terraform-state-locks-prod"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+  tags = {
+    Name        = "Terraform State Lock Table Production"
+    Environment = "prod"
+  }
+}
+
+#==============================================================================
 # Outputs
 #==============================================================================
 
