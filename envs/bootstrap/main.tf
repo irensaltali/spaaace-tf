@@ -20,8 +20,9 @@ terraform {
 
 # Provider for staging (eu-west-1)
 provider "aws" {
-  alias  = "staging"
-  region = "eu-west-1"
+  alias   = "staging"
+  region  = "eu-west-1"
+  profile = "irensaltali"
 
   default_tags {
     tags = {
@@ -34,8 +35,9 @@ provider "aws" {
 
 # Provider for production (eu-north-1)
 provider "aws" {
-  alias  = "prod"
-  region = "eu-north-1"
+  alias   = "prod"
+  region  = "eu-north-1"
+  profile = "irensaltali"
 
   default_tags {
     tags = {
