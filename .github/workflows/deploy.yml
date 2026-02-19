@@ -235,7 +235,7 @@ jobs:
           repository: irensaltali/spaaace
           path: spaaace
           token: ${{ secrets.SOURCE_REPO_PAT || secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event.client_payload.branch || (needs.setup.outputs.environment == 'prod' && 'master') || 'develop' }}
+          ref: ${{ github.event.client_payload.branch || (needs.setup.outputs.environment == 'prod' && 'main') || 'develop' }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

@@ -5,7 +5,7 @@
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
-  default     = "dev"
+  default     = "staging"
 }
 
 variable "aws_region" {
@@ -29,7 +29,7 @@ variable "ssh_key_name" {
 variable "domain_name" {
   description = "Root domain name"
   type        = string
-  default     = "spaaace.online"
+  default     = "staging.spaaace.online"
 }
 
 #==============================================================================
@@ -45,7 +45,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "Availability zones to use"
   type        = list(string)
-  default     = ["eu-north-1a", "eu-north-1b", "eu-north-1c"]
+  default     = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
 }
 
 variable "public_subnets" {
@@ -131,7 +131,7 @@ variable "enable_autoscaling" {
 variable "create_hosted_zone" {
   description = "Create a new Route53 hosted zone (set to false if using existing zone)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "alb_certificate_arn" {

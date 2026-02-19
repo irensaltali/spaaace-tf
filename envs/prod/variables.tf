@@ -5,7 +5,7 @@
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
-  default     = "dev"
+  default     = "prod"
 }
 
 variable "aws_region" {
@@ -15,9 +15,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "AWS profile to use for authentication"
+  description = "AWS profile to use for authentication (null to use default credentials)"
   type        = string
-  default     = "irensaltali"
+  default     = null
 }
 
 variable "ssh_key_name" {
