@@ -32,6 +32,18 @@ variable "domain_name" {
   default     = "staging.spaaace.online"
 }
 
+variable "parent_zone_name" {
+  description = "Parent Route53 public zone used for DNS records (when create_hosted_zone is false and route53_zone_id is not set)"
+  type        = string
+  default     = "spaaace.online"
+}
+
+variable "route53_zone_id" {
+  description = "Existing Route53 zone ID to use for DNS records (recommended in CI to avoid ambiguous hosted zone lookups)"
+  type        = string
+  default     = ""
+}
+
 #==============================================================================
 # VPC Variables
 #==============================================================================

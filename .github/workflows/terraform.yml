@@ -84,6 +84,8 @@ jobs:
     defaults:
       run:
         working-directory: ./envs/${{ needs.setup.outputs.environment }}
+    env:
+      TF_VAR_route53_zone_id: ${{ needs.setup.outputs.environment == 'staging' && secrets.STAGING_ROUTE53_ZONE_ID || '' }}
 
     steps:
       - name: Checkout

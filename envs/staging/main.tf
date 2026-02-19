@@ -126,11 +126,11 @@ data "aws_acm_certificate" "alb" {
 
 # Create the Route53 hosted zone for staging
 data "aws_route53_zone" "parent" {
-  count = var.create_hosted_zone ? 0 : 1
+  count = var.create_hosted_zone || var.route53_zone_id != "" ? 0 : 1
 
   # Look up the existing hosted zone (parent zone for subdomain)
   # For staging.spaaace.online, look up spaaace.online
-  name         = "spaaace.online"
+  name         = var.parent_zone_name
   private_zone = false
 }
 
@@ -143,7 +143,7 @@ resource "aws_route53_zone" "this" {
 }
 
 locals {
-  route53_zone_id = var.create_hosted_zone ? aws_route53_zone.this[0].zone_id : data.aws_route53_zone.parent[0].zone_id
+  route53_zone_id = var.create_hosted_zone ? aws_route53_zone.this[0].zone_id : (var.route53_zone_id != "" ? replace(var.route53_zone_id, "/hostedzone/", "") : data.aws_route53_zone.parent[0].zone_id)
   # Use provided certificate ARN, or look it up, or null if HTTPS is disabled
   certificate_arn = var.enable_https ? (var.alb_certificate_arn != "" ? var.alb_certificate_arn : try(data.aws_acm_certificate.alb[0].arn, null)) : null
 }
