@@ -56,6 +56,11 @@ resource "aws_iam_role_policy_attachment" "ecs_instance_cloudwatch" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
 }
 
+resource "aws_iam_role_policy_attachment" "ecs_instance_ssm" {
+  role       = aws_iam_role.ecs_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "ecs_instance" {
   name = "${var.name}-ecs-instance-profile"
   role = aws_iam_role.ecs_instance.name
@@ -120,7 +125,7 @@ resource "aws_autoscaling_group" "ecs" {
 
   launch_template {
     id      = aws_launch_template.ecs.id
-    version = "$Latest"
+    version = aws_launch_template.ecs.latest_version
   }
 
   tag {
