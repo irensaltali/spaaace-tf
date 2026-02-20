@@ -88,32 +88,7 @@ module "ecr_prod" {
   }
 }
 
-#==============================================================================
-# Route53 Hosted Zones
-#==============================================================================
-
-# Staging hosted zone (eu-west-1)
-resource "aws_route53_zone" "staging" {
-  provider = aws.staging
-
-  name = "staging.spaaace.online"
-
-  tags = {
-    Environment = "staging"
-  }
-}
-
-# Production hosted zone (eu-north-1)
-resource "aws_route53_zone" "prod" {
-  provider = aws.prod
-
-  name = "spaaace.online"
-
-  tags = {
-    Environment = "prod"
-  }
-}
-
+# Route 53 zones are pre-existing and managed externally.
 #==============================================================================
 # Terraform State Backend Resources
 #==============================================================================
@@ -222,43 +197,3 @@ output "prod_ecr_repository_url" {
   value       = module.ecr_prod.repository_url
 }
 
-output "staging_route53_zone_id" {
-  description = "Staging Route53 zone ID"
-  value       = aws_route53_zone.staging.zone_id
-}
-
-output "staging_route53_nameservers" {
-  description = "Staging Route53 nameservers (add these to your domain registrar)"
-  value       = aws_route53_zone.staging.name_servers
-}
-
-output "prod_route53_zone_id" {
-  description = "Production Route53 zone ID"
-  value       = aws_route53_zone.prod.zone_id
-}
-
-output "prod_route53_nameservers" {
-  description = "Production Route53 nameservers (add these to your domain registrar)"
-  value       = aws_route53_zone.prod.name_servers
-}
-
-output "nameserver_instructions" {
-  description = "Instructions for setting up DNS"
-  value       = <<-EOT
-    
-    ============================================
-    DNS SETUP INSTRUCTIONS
-    ============================================
-    
-    1. STAGING (staging.spaaace.online)
-       Add these nameservers to your domain registrar:
-       ${join("\n       ", aws_route53_zone.staging.name_servers)}
-    
-    2. PRODUCTION (spaaace.online)
-       Add these nameservers to your domain registrar:
-       ${join("\n       ", aws_route53_zone.prod.name_servers)}
-    
-    ============================================
-    
-  EOT
-}

@@ -140,10 +140,6 @@ output "route53_zone_id" {
   value       = local.route53_zone_id
 }
 
-output "route53_nameservers" {
-  description = "Route53 nameservers (add to domain registrar)"
-  value       = var.create_hosted_zone ? aws_route53_zone.this[0].name_servers : []
-}
 
 output "game_server_domain" {
   description = "Domain name for game server"

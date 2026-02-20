@@ -140,12 +140,6 @@ variable "enable_autoscaling" {
   default     = false
 }
 
-variable "create_hosted_zone" {
-  description = "Create a new Route53 hosted zone (set to false if using existing zone)"
-  type        = bool
-  default     = false
-}
-
 variable "alb_certificate_arn" {
   description = "ARN of the ACM certificate for ALB (in eu-west-1)"
   type        = string
