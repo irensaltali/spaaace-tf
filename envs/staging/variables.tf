@@ -155,11 +155,11 @@ variable "cloudfront_certificate_arn" {
 variable "enable_https" {
   description = "Enable HTTPS on ALB (requires ACM certificate)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_cloudfront_custom_domain" {
   description = "Enable custom domain on CloudFront (requires ACM certificate in us-east-1)"
   type        = bool
-  default     = false
+  default     = true
 }
