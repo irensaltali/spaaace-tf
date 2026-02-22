@@ -66,6 +66,18 @@ variable "enable_container_insights" {
   default     = true
 }
 
+variable "enable_instance_refresh" {
+  description = "Enable ASG instance refresh when launch template changes"
+  type        = bool
+  default     = true
+}
+
+variable "asg_update_timeout" {
+  description = "Timeout for ASG update operations"
+  type        = string
+  default     = "45m"
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

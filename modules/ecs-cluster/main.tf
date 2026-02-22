@@ -156,17 +156,24 @@ resource "aws_autoscaling_group" "ecs" {
   termination_policies = ["Default"]
 
   # Instance refresh for rolling updates
-  instance_refresh {
-    strategy = "Rolling"
-    preferences {
-      min_healthy_percentage = 50
-      instance_warmup        = 60
+  dynamic "instance_refresh" {
+    for_each = var.enable_instance_refresh ? [1] : []
+    content {
+      strategy = "Rolling"
+      preferences {
+        min_healthy_percentage = 50
+        instance_warmup        = 60
+      }
     }
   }
 
   # Lifecycle hooks for graceful shutdown (optional, for production)
   # default_cooldown allows instances to stabilize before further scaling
   default_cooldown = 300
+
+  timeouts {
+    update = var.asg_update_timeout
+  }
 }
 
 # ECS Capacity Provider

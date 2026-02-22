@@ -185,6 +185,7 @@ module "ecs_cluster" {
   spot_max_price     = var.spot_max_price
 
   enable_container_insights = true
+  enable_instance_refresh   = false
 
   tags = local.common_tags
 }
